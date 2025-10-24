@@ -2,7 +2,12 @@ import LandingHeader from "@/components/LandingHeader";
 import LandingFooter from "@/components/LandingFooter";
 import ChatBox from "@/components/ChatBox";
 
-export default function MessageOwnerPage({ params }: { params: { id: string } }) {
+type PageProps = {
+  params: { id: string };
+  searchParams?: { [key: string]: string | string[] | undefined };
+};
+
+export default function MessageOwnerPage({ params }: PageProps) {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <LandingHeader />
