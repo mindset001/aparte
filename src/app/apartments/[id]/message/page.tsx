@@ -2,13 +2,13 @@ import LandingHeader from "@/components/LandingHeader";
 import LandingFooter from "@/components/LandingFooter";
 import ChatBox from "@/components/ChatBox";
 
-interface MessageOwnerPageProps {
+type PageProps = {
   params: {
     id: string;
   };
-}
+};
 
-export default function MessageOwnerPage({ params }: MessageOwnerPageProps) {
+export default function MessageOwnerPage({ params }: PageProps) {
   const { id } = params;
 
   return (
