@@ -43,7 +43,7 @@ function SidebarLayout({ children }: { children: React.ReactNode }) {
         />
       )}
       {/* Main Content */}
-      <div className="flex-1 flex flex-col md:ml-64">
+      <div className="flex-1 flex flex-col">
         <header className="w-full bg-white shadow-sm h-16 flex items-center px-4 border-b mb-6 justify-between sticky top-0 z-20">
           <button
             onClick={() => setSidebarOpen(true)}
