@@ -3,13 +3,13 @@ import LandingFooter from "@/components/LandingFooter";
 import ChatBox from "@/components/ChatBox";
 
 type PageProps = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
-export default function MessageOwnerPage({ params }: PageProps) {
-  const { id } = params;
+export default async function MessageOwnerPage({ params }: PageProps) {
+  const { id } = await params;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
