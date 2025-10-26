@@ -1,12 +1,20 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
+import { useAppSelector } from "@/store";
 import { useRouter } from "next/navigation";
 import { LogOut, Menu, ArrowLeft } from "lucide-react";
 
 function SidebarLayout({ children }: { children: React.ReactNode }) {
-  const userName = "John Doe";
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { user, isAuthenticated } = useAppSelector((state) => state.auth);
+  const router = useRouter();
+  React.useEffect(() => {
+    if (!isAuthenticated) {
+      router.push("/auth/login");
+    }
+  }, [isAuthenticated, router]);
+  const userName = user?.fullName || user?.email || "";
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   
   return (
     <div className="flex min-h-screen bg-gray-50">

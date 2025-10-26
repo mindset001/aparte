@@ -1,15 +1,12 @@
+"use client";
 import LandingHeader from "@/components/LandingHeader";
 import LandingFooter from "@/components/LandingFooter";
 import ChatBox from "@/components/ChatBox";
+import { useParams } from "next/navigation";
 
-type PageProps = {
-  params: Promise<{
-    id: string;
-  }>;
-};
-
-export default async function MessageOwnerPage({ params }: PageProps) {
-  const { id } = await params;
+export default function MessageOwnerPage() {
+  const params = useParams();
+  const id = typeof params?.id === "string" ? params.id : Array.isArray(params?.id) ? params.id[0] : "";
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">

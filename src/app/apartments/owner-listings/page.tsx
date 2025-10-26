@@ -1,10 +1,19 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
+import { useAppSelector } from "@/store";
+import { useRouter } from "next/navigation";
 
 function SidebarLayout({ children }: { children: React.ReactNode }) {
-  const userName = "John Doe";
-  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const { user, isAuthenticated } = useAppSelector((state) => state.auth);
+  const router = useRouter();
+  React.useEffect(() => {
+    if (!isAuthenticated) {
+      router.push("/auth/login");
+    }
+  }, [isAuthenticated, router]);
+  const userName = user?.fullName || user?.email || "";
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar */}
@@ -61,53 +70,81 @@ function SidebarLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+
+type Apartment = {
+  _id?: string;
+  id?: string;
+  title: string;
+  location: string;
+  price: string;
+  description?: string;
+  images?: string[];
+  owner?: string;
+};
+
 export default function OwnerListingsPage() {
-  // Mock data for demonstration
-  const apartments = [
-    {
-      id: "1",
-      title: "Modern 2BR Apartment",
-      location: "Ikeja, Lagos",
-      price: "₦1,200,000/year",
-      status: "Active",
-      image: "/apartment1.jpg",
-    },
-    {
-      id: "2",
-      title: "Cozy Studio Flat",
-      location: "Lekki, Lagos",
-      price: "₦800,000/year",
-      status: "Inactive",
-      image: "/apartment2.jpg",
-    },
-  ];
+  const { user } = useAppSelector((state) => state.auth);
+  const [apartments, setApartments] = React.useState<Apartment[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  React.useEffect(() => {
+    async function fetchApartments() {
+      if (!user?.uuid) return;
+      setLoading(true);
+      try {
+        const res = await fetch(process.env.NEXT_PUBLIC_API_BASE_URL + "apartments");
+        const data = await res.json();
+        // Filter apartments by owner uuid (now populated)
+        const myApts = Array.isArray(data)
+          ? data.filter((apt) => apt.owner?.uuid === user.uuid)
+          : [];
+        setApartments(myApts);
+      } catch (err) {
+        setApartments([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchApartments();
+  }, [user?.uuid]);
 
   return (
     <SidebarLayout>
       <div className="max-w-4xl mx-auto p-4 sm:p-6 md:p-8">
         <h1 className="text-2xl font-bold mb-6 text-indigo-800">My Apartment Listings</h1>
-        <div className="grid gap-6 grid-cols-1 sm:grid-cols-2">
-          {apartments.map((apt) => (
-            <div key={apt.id} className="flex flex-col sm:flex-row items-center bg-white rounded-lg shadow p-4 gap-4">
-              <img src={apt.image} alt={apt.title} className="w-32 h-32 object-cover rounded-md border mb-2 sm:mb-0" />
-              <div className="flex-1 w-full">
-                <div className="font-semibold text-indigo-700">{apt.title}</div>
-                <div className="text-sm text-gray-500">{apt.location}</div>
-                <div className="text-sm text-gray-700">{apt.price}</div>
-                <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs ${apt.status === "Active" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-500"}`}>{apt.status}</span>
+        {loading ? (
+          <div className="text-center text-gray-500">Loading...</div>
+        ) : apartments.length === 0 ? (
+          <div className="text-center text-gray-500">No apartments found.</div>
+        ) : (
+          <div className="grid gap-6 grid-cols-1 sm:grid-cols-2">
+            {apartments.map((apt) => (
+              <div key={apt._id || apt.id} className="bg-white rounded-xl shadow-lg border border-gray-100 flex flex-col sm:flex-row items-center gap-4 p-4">
+                <img src={apt.images?.[0] || "/apartment1.jpg"} alt={apt.title || "Apartment"} className="w-28 h-28 object-cover rounded-full border-2 border-indigo-100 mb-2 sm:mb-0" />
+                <div className="flex-1 w-full">
+                  <div className="font-semibold text-indigo-700 text-lg mb-1">{apt.title || "Untitled"}</div>
+                  <div className="text-xs text-gray-500 mb-1">{apt.location || "Unknown location"}</div>
+                  <div className="text-sm text-gray-700 mb-1">{apt.price || "N/A"}</div>
+                  <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs bg-green-100 text-green-700`}>Active</span>
+                </div>
+                <div className="flex flex-col gap-2 mt-2 sm:mt-0">
+                  <a
+                    href={`/apartments/edit?id=${apt._id || apt.id || ""}&title=${encodeURIComponent(apt.title || "")}&description=${encodeURIComponent(apt.description || "")}&price=${encodeURIComponent(apt.price || "")}&location=${encodeURIComponent(apt.location || "")}&image=${encodeURIComponent((apt.images?.[0]) || "")}`}
+                    className="px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm"
+                  >
+                    Edit
+                  </a>
+                  <button className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-sm">Delete</button>
+                  <a
+                    href={`/apartments/${apt._id || apt.id || ""}/message`}
+                    className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100 text-sm border border-indigo-100"
+                  >
+                    View Messages
+                  </a>
+                </div>
               </div>
-              <div className="flex flex-row gap-2 mt-2 sm:mt-0">
-                <a
-                  href={`/apartments/edit?id=${apt.id}&title=${encodeURIComponent(apt.title)}&description=${encodeURIComponent('Spacious and modern 2 bedroom apartment in ' + apt.location + '.')}&price=${encodeURIComponent(apt.price)}&location=${encodeURIComponent(apt.location)}&image=${encodeURIComponent(apt.image)}`}
-                  className="px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm"
-                >
-                  Edit
-                </a>
-                <button className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-sm">Delete</button>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </SidebarLayout>
   );

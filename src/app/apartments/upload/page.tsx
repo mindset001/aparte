@@ -1,10 +1,20 @@
 "use client";
 
 import React, { useRef, useState } from "react";
+import { notification } from "antd";
+import { useAppSelector } from "@/store";
+import { useRouter } from "next/navigation";
 
 function SidebarLayout({ children }: { children: React.ReactNode }) {
-  const userName = "John Doe";
-  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const { user, isAuthenticated } = useAppSelector((state) => state.auth);
+  const router = useRouter();
+  React.useEffect(() => {
+    if (!isAuthenticated) {
+      router.push("/auth/login");
+    }
+  }, [isAuthenticated, router]);
+  const userName = user?.fullName || user?.email || "";
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar */}
@@ -63,14 +73,21 @@ function SidebarLayout({ children }: { children: React.ReactNode }) {
 
 
 export default function UploadApartmentPage() {
-  const [images, setImages] = useState<string[]>([]);
+  const { isAuthenticated, user } = useAppSelector((state) => state.auth);
+  const [images, setImages] = useState<File[]>([]);
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
+    price: "",
+    location: "",
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     if (e.target.files) {
       const files = Array.from(e.target.files).slice(0, 5 - images.length);
-      const urls = files.map(file => URL.createObjectURL(file));
-      setImages(prev => [...prev, ...urls].slice(0, 5));
+      setImages(prev => [...prev, ...files].slice(0, 5));
     }
   }
 
@@ -78,10 +95,53 @@ export default function UploadApartmentPage() {
     setImages(prev => prev.filter((_, i) => i !== idx));
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // Here you would handle the upload logic
-    alert("Apartment uploaded (UI only)");
+    if (!isAuthenticated) {
+      notification.error({ message: "Not Authenticated", description: "You must be logged in to upload an apartment." });
+      console.error("Not authenticated");
+      return;
+    }
+    if (!form.title || !form.description || !form.price || !form.location) {
+      notification.error({ message: "Missing Fields", description: "All fields are required." });
+      console.error("Missing fields", form);
+      return;
+    }
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append("title", form.title);
+      formData.append("description", form.description);
+      formData.append("price", form.price);
+      formData.append("location", form.location);
+      images.forEach((file) => formData.append("images", file));
+      if (user?.uuid) formData.append("ownerUuid", user.uuid);
+      console.log("Submitting apartment:", {
+        ...form,
+        images,
+        ownerUuid: user?.uuid
+      });
+      const res = await fetch(process.env.NEXT_PUBLIC_API_BASE_URL + "apartments", {
+        method: "POST",
+        body: formData,
+      });
+      console.log("API response status:", res.status);
+      const result = await res.json();
+      console.log("API response data:", result);
+      if (!res.ok) throw new Error(result.message || "Upload failed");
+      notification.success({ message: "Apartment Uploaded", description: "Your apartment has been uploaded successfully!" });
+      setForm({ title: "", description: "", price: "", location: "" });
+      setImages([]);
+    } catch (err: any) {
+      notification.error({ message: "Upload Failed", description: err.message });
+      console.error("Upload error:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -91,20 +151,20 @@ export default function UploadApartmentPage() {
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="block text-sm font-medium mb-1">Title</label>
-            <input required className="w-full border rounded px-3 py-2" placeholder="e.g. Modern 2BR Apartment" />
+            <input name="title" value={form.title} onChange={handleChange} required className="w-full border rounded px-3 py-2" placeholder="e.g. Modern 2BR Apartment" />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Description</label>
-            <textarea required className="w-full border rounded px-3 py-2" rows={3} placeholder="Describe the apartment..." />
+            <textarea name="description" value={form.description} onChange={handleChange} required className="w-full border rounded px-3 py-2" rows={3} placeholder="Describe the apartment..." />
           </div>
           <div className="flex gap-4">
             <div className="flex-1">
               <label className="block text-sm font-medium mb-1">Price</label>
-              <input required className="w-full border rounded px-3 py-2" placeholder="₦1,200,000/year" />
+              <input name="price" value={form.price} onChange={handleChange} required className="w-full border rounded px-3 py-2" placeholder="₦1,200,000/year" />
             </div>
             <div className="flex-1">
               <label className="block text-sm font-medium mb-1">Location</label>
-              <input required className="w-full border rounded px-3 py-2" placeholder="e.g. Ikeja, Lagos" />
+              <input name="location" value={form.location} onChange={handleChange} required className="w-full border rounded px-3 py-2" placeholder="e.g. Ikeja, Lagos" />
             </div>
           </div>
           <div>
@@ -112,7 +172,7 @@ export default function UploadApartmentPage() {
             <div className="flex flex-wrap gap-4 mt-2">
               {images.map((img, idx) => (
                 <div key={idx} className="relative group">
-                  <img src={img} alt={`Apartment ${idx + 1}`} className="w-32 h-32 object-cover rounded border" />
+                  <img src={URL.createObjectURL(img)} alt={`Apartment ${idx + 1}`} className="w-32 h-32 object-cover rounded border" />
                   <button
                     type="button"
                     onClick={() => handleRemoveImage(idx)}
@@ -143,7 +203,9 @@ export default function UploadApartmentPage() {
               disabled={images.length >= 5}
             />
           </div>
-          <button type="submit" className="w-full bg-indigo-700 text-white py-2 rounded hover:bg-indigo-800 font-semibold">Upload Apartment</button>
+          <button type="submit" className="w-full bg-indigo-700 text-white py-2 rounded hover:bg-indigo-800 font-semibold" disabled={loading}>
+            {loading ? "Uploading..." : "Upload Apartment"}
+          </button>
         </form>
       </div>
     </SidebarLayout>

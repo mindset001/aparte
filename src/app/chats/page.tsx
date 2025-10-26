@@ -1,11 +1,19 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
+import { useAppSelector } from "@/store";
 import { useRouter } from "next/navigation";
 
 function SidebarLayout({ children }: { children: React.ReactNode }) {
-  const userName = "John Doe";
-  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const { user, isAuthenticated } = useAppSelector((state) => state.auth);
+  const router = useRouter();
+  React.useEffect(() => {
+    if (!isAuthenticated) {
+      router.push("/auth/login");
+    }
+  }, [isAuthenticated, router]);
+  const userName = user?.fullName || user?.email || "";
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar */}
@@ -63,76 +71,129 @@ function SidebarLayout({ children }: { children: React.ReactNode }) {
 }
 
 export default function ChatsPage() {
-  // Mock data for demonstration
-  const apartments = [
-    {
-      id: "1",
-      title: "Modern 2BR Apartment",
-    },
-    {
-      id: "2",
-      title: "Cozy Studio Flat",
-    },
-  ];
-  const messages = [
-    {
-      apartmentId: "1",
-      from: "Jane Doe",
-      text: "Hi, is this apartment still available?",
-      time: "Today, 10:15 AM",
-      direction: "received", // you are the owner
-    },
-    {
-      apartmentId: "2",
-      from: "You",
-      text: "Is this still available?",
-      time: "Yesterday, 9:00 AM",
-      direction: "sent", // you messaged the owner
-    },
-    {
-      apartmentId: "2",
-      from: "John Smith",
-      text: "Can I schedule a viewing?",
-      time: "Yesterday, 4:30 PM",
-      direction: "received",
-    },
-  ];
+  const { user } = useAppSelector((state) => state.auth);
+  const [apartments, setApartments] = React.useState<any[]>([]);
+  const [messages, setMessages] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [senderNames, setSenderNames] = React.useState<Record<string, string>>({});
   const router = useRouter();
+
+  React.useEffect(() => {
+    async function fetchChats() {
+      if (!user?.uuid) return;
+      setLoading(true);
+      try {
+        // Fetch all apartments (for sender and owner views)
+        const resApt = await fetch(process.env.NEXT_PUBLIC_API_BASE_URL + "apartments");
+        const dataApt = await resApt.json();
+        // Apartments owned by user
+        const myApts = Array.isArray(dataApt) ? dataApt.filter((apt) => apt.owner?.uuid === user.uuid) : [];
+        // Apartments where user has sent a message (but does NOT own)
+        let sentAptIds = new Set<string>();
+        let allMessages: any[] = [];
+        const senderIdSet = new Set<string>();
+
+        await Promise.all(
+          dataApt.map(async (apt: any) => {
+            try {
+              const resMsg = await fetch(process.env.NEXT_PUBLIC_API_BASE_URL + `messages/${apt._id || apt.id}`);
+              const msgs = await resMsg.json();
+              msgs.forEach((msg: any) => {
+                // If user is owner, show only received messages
+                if (apt.owner?.uuid === user.uuid && msg.sender !== user.uuid && msg.sender !== user._id && msg.sender !== user.id) {
+                  allMessages.push({
+                    ...msg,
+                    apartmentId: apt._id || apt.id,
+                    direction: "received"
+                  });
+                  senderIdSet.add(msg.sender);
+                }
+                // If user is sender (not owner), show only sent messages
+                if ((msg.sender === user.uuid || msg.sender === user._id || msg.sender === user.id) && apt.owner?.uuid !== user.uuid) {
+                  allMessages.push({
+                    ...msg,
+                    apartmentId: apt._id || apt.id,
+                    direction: "sent"
+                  });
+                  sentAptIds.add(apt._id || apt.id);
+                  senderIdSet.add(msg.sender);
+                }
+              });
+            } catch {}
+          })
+        );
+        // Apartments relevant to user (owner or sender)
+        const relevantApts = dataApt.filter((apt: any) => apt.owner?.uuid === user.uuid || sentAptIds.has(apt._id || apt.id));
+        setApartments(relevantApts);
+        setMessages(allMessages);
+
+        // Fetch sender names
+        const senderNamesObj: Record<string, string> = {};
+        await Promise.all(
+          Array.from(senderIdSet).map(async (senderId) => {
+            try {
+              const resUser = await fetch(process.env.NEXT_PUBLIC_API_BASE_URL + `users/${senderId}`);
+              const userData = await resUser.json();
+              senderNamesObj[senderId] = userData.fullName || userData.email || senderId;
+            } catch {
+              senderNamesObj[senderId] = senderId;
+            }
+          })
+        );
+        setSenderNames(senderNamesObj);
+      } catch {
+        setApartments([]);
+        setMessages([]);
+        setSenderNames({});
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchChats();
+  }, [user?.uuid, user?.id, user?._id]);
 
   return (
     <SidebarLayout>
       <div className="max-w-3xl mx-auto">
         <h1 className="text-2xl font-bold mb-6 text-indigo-800">Chats</h1>
-        <div className="space-y-4">
-          {messages.map((msg, i) => {
-            const apt = apartments.find(a => a.id === msg.apartmentId);
-            return (
-              <div key={i} className="bg-white rounded-lg shadow p-4 flex flex-col md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="font-semibold text-indigo-700">{msg.from}</div>
-                  <div className="text-sm text-gray-600 mb-1">{msg.text}</div>
-                  {apt && (
-                    <div className="text-xs text-gray-500">For: <span className="font-semibold">{apt.title}</span></div>
-                  )}
-                  <div className="mt-1">
-                    {msg.direction === "sent" ? (
-                      <span className="inline-block px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700 mr-2">You messaged owner</span>
-                    ) : (
-                      <span className="inline-block px-2 py-0.5 rounded text-xs bg-green-100 text-green-700 mr-2">Messaged you as owner</span>
-                    )}
-                    <span className="text-xs text-gray-400">{msg.time}</span>
+        {loading ? (
+          <div className="text-center text-gray-500">Loading...</div>
+        ) : (
+          <div className="space-y-4">
+            {messages.length === 0 ? (
+              <div className="text-center text-gray-400">No chats found.</div>
+            ) : (
+              messages.map((msg, i) => {
+                const apt = apartments.find(a => (a._id || a.id) === msg.apartmentId);
+                return (
+                  <div key={msg._id || i} className="bg-white rounded-lg shadow p-4 flex flex-col md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <div className="font-semibold text-indigo-700">{msg.direction === "sent" ? "You" : senderNames[msg.sender] || msg.sender}</div>
+                      <div className="text-sm text-gray-600 mb-1">{msg.content}</div>
+                      {apt && (
+                        <div className="text-xs text-gray-500">For: <span className="font-semibold">{apt.title}</span></div>
+                      )}
+                      <div className="mt-1">
+                        {msg.direction === "sent" ? (
+                          <span className="inline-block px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700 mr-2">You messaged owner</span>
+                        ) : (
+                          <span className="inline-block px-2 py-0.5 rounded text-xs bg-green-100 text-green-700 mr-2">Messaged you as owner</span>
+                        )}
+                        <span className="text-xs text-gray-400">{msg.timestamp ? new Date(msg.timestamp).toLocaleString() : ""}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => router.push(`/apartments/${msg.apartmentId}/message`)}
+                      className="text-indigo-600 hover:underline text-xs mt-2 md:mt-0"
+                    >
+                      Open Chat
+                    </button>
                   </div>
-                </div>
-                <button
-                  onClick={() => router.push(`/apartments/${msg.apartmentId}/message`)}
-                  className="text-indigo-600 hover:underline text-xs mt-2 md:mt-0"
-                >
-                  Open Chat
-                </button>
-              </div>
-            );
-          })}
-        </div>
+                );
+              })
+            )}
+          </div>
+        )}
       </div>
     </SidebarLayout>
   );

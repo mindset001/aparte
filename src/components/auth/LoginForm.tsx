@@ -1,13 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import { useAppDispatch, useAppSelector } from "@/store";
+import { setLoginCredentials, setLoginLoading, setLoginError } from "@/store/slices/loginSlice";
+import { authStart, authSuccess, authFailure } from "@/store/slices/authSlice";
+import { useRouter } from "next/navigation";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 
-export default function LoginForm() {
+const LoginForm = () => {
+  const dispatch = useAppDispatch();
+  const router = useRouter();
+  const { isLoading, error } = useAppSelector((state) => state.login);
 
   const [form, setForm] = useState({
     email: "",
@@ -26,13 +33,39 @@ export default function LoginForm() {
     }));
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      setSuccess(true);
-    }, 1000);
+    dispatch(authStart());
+    dispatch(setLoginLoading(true));
+    dispatch(setLoginCredentials({ email: form.email, password: form.password }));
+    setSuccess(false);
+    try {
+      const res = await fetch(process.env.NEXT_PUBLIC_API_BASE_URL + "auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email, password: form.password })
+      });
+      const result = await res.json();
+      dispatch(setLoginLoading(false));
+      if (!res.ok) {
+        dispatch(setLoginError(result.message || "Invalid credentials"));
+        dispatch(authFailure(result.message || "Invalid credentials"));
+        setSuccess(false);
+      } else {
+        dispatch(setLoginError(undefined));
+        setSuccess(true);
+  // Ensure uuid is present for apartment upload
+  const user = { ...result.user };
+  if (!user.uuid && user.id) user.uuid = user.id;
+  dispatch(authSuccess({ user }));
+        router.push("/");
+      }
+    } catch (err: any) {
+      dispatch(setLoginLoading(false));
+      dispatch(setLoginError("Login failed"));
+      dispatch(authFailure("Login failed"));
+      setSuccess(false);
+    }
   }
 
   return (
@@ -93,9 +126,10 @@ export default function LoginForm() {
               </label>
               <Link href="#" className="text-indigo-700 text-sm hover:underline cursor-pointer">Forgot password?</Link>
             </div>
-            <Button type="submit" className="w-full mt-4 cursor-pointer" disabled={loading}>
-              {loading ? "Logging in..." : "Login"}
+            <Button type="submit" className="w-full mt-4 cursor-pointer" disabled={isLoading}>
+              {isLoading ? "Logging in..." : "Login"}
             </Button>
+            {error && <div className="text-red-600 mt-2">{error}</div>}
             <div className="text-center mt-4 text-sm text-gray-600">
               New here?{' '}
               <Link href="/auth/register" className="text-indigo-700 font-medium hover:underline cursor-pointer">Register</Link>
@@ -105,4 +139,6 @@ export default function LoginForm() {
       </div>
     </Card>
   );
-}
+};
+
+export default LoginForm;

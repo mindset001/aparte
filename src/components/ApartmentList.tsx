@@ -1,63 +1,73 @@
+'use client'
+
+import React from "react";
 import Image from "next/image";
 import Link from "next/link";
 
-const mockApartments = [
-  {
-    id: 1,
-    title: "Modern 2 Bedroom Apartment",
-    description: "Spacious and bright apartment in the city center with all amenities included.",
-    price: "$1,200/mo",
-    location: "Ikeja, Lagos",
-    image: "https://images.unsplash.com/photo-1507089947368-19c1da9775ae?auto=format&fit=crop&w=600&q=80",
-    owner: "Jane Doe",
-  },
-  {
-    id: 2,
-    title: "Cozy Studio Flat",
-    description: "Perfect for singles or students. Close to public transport and shops.",
-    price: "$700/mo",
-    location: "Yaba, Lagos",
-    image: "https://images.unsplash.com/photo-1464983953574-0892a716854b?auto=format&fit=crop&w=600&q=80",
-    owner: "John Smith",
-  },
-  {
-    id: 3,
-    title: "Luxury Penthouse Suite",
-    description: "Enjoy stunning views and top-class facilities in this exclusive penthouse.",
-    price: "$3,500/mo",
-    location: "Victoria Island, Lagos",
-    image: "https://images.unsplash.com/photo-1512918728675-ed5a9ecdebfd?auto=format&fit=crop&w=600&q=80",
-    owner: "Ada Nwosu",
-  },
-];
-
 export default function ApartmentList() {
+  const [apartments, setApartments] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    async function fetchApartments() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(process.env.NEXT_PUBLIC_API_BASE_URL + "apartments");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Failed to fetch apartments");
+        setApartments(data);
+        console.log("Fetched apartments:", data);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchApartments();
+  }, []);
+
+  if (loading) return <div className="text-center py-10">Loading apartments...</div>;
+  if (error) return <div className="text-center text-red-600 py-10">{error}</div>;
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-      {mockApartments.map((apt) => (
-        <div key={apt.id} className="bg-white rounded-xl shadow-md overflow-hidden flex flex-col">
+      {apartments.map((apt) => (
+        <div key={apt._id || apt.id} className="bg-white rounded-xl shadow-lg overflow-hidden flex flex-col border border-gray-100">
           <div className="relative h-48 w-full">
             <Image
-              src={apt.image}
-              alt={apt.title}
+              src={apt.images?.[0] || "https://via.placeholder.com/300x200?text=No+Image"}
+              alt={apt.title || "Apartment"}
               fill
               className="object-cover w-full h-full"
               priority
             />
           </div>
           <div className="p-5 flex flex-col flex-1">
-            <h2 className="text-xl font-bold text-indigo-800 mb-1">{apt.title}</h2>
-            <div className="text-gray-500 text-sm mb-2">{apt.location}</div>
-            <div className="text-gray-700 mb-3 flex-1">{apt.description}</div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center font-bold text-indigo-700 text-lg">
+                {apt.owner?.fullName ? apt.owner.fullName.split(' ').map((n: string) => n[0]).join('') : "A"}
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-indigo-800 leading-tight">{apt.title || "Untitled"}</h2>
+                <div className="text-gray-500 text-xs">{apt.location || "Unknown location"}</div>
+                <div className="text-xs text-gray-400">Owner: {apt.owner?.fullName || "Unknown"}</div>
+                {apt.owner?.email && (
+                  <div className="text-xs text-gray-400">Email: {apt.owner.email}</div>
+                )}
+              </div>
+            </div>
+            <div className="text-gray-700 mb-3 flex-1 text-sm">{apt.description || "No description"}</div>
             <div className="flex items-center justify-between mt-2">
-              <span className="text-lg font-semibold text-indigo-700">{apt.price}</span>
-              <span className="text-sm text-gray-400">by {apt.owner}</span>
+              <span className="text-lg font-semibold text-indigo-700">{apt.price || "N/A"}</span>
+              {/* Owner info now shown above */}
             </div>
             <div className="flex flex-col gap-2 mt-4">
-              <Link href={`/apartments/${apt.id}`}>
+              <Link href={`/apartments/${apt._id}`}>
                 <button className="w-full bg-indigo-600 text-white py-2 rounded-lg font-medium hover:bg-indigo-700 transition cursor-pointer">View Apartment</button>
               </Link>
-              <Link href={`/apartments/${apt.id}/message`}>
+              <Link href={`/apartments/${apt._id}/message`}>
                 <button className="w-full bg-indigo-700 text-white py-2 rounded-lg font-medium hover:bg-indigo-800 transition cursor-pointer">Message Owner</button>
               </Link>
             </div>
@@ -67,3 +77,4 @@ export default function ApartmentList() {
     </div>
   );
 }
+

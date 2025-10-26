@@ -2,10 +2,17 @@
 
 import React, { useState } from "react";
 import { LogOut, Menu } from "lucide-react";
+import { useAppSelector } from "@/store";
+import { useRouter } from "next/navigation";
 
-function SidebarLayout({ children }: { children: React.ReactNode }) {
-  // Mock user name for demonstration
-  const userName = "John Doe";
+function SidebarLayout({ children, user }: { children: React.ReactNode; user: any }) {
+  const router = useRouter();
+  React.useEffect(() => {
+    if (!user) {
+      router.push("/auth/login");
+    }
+  }, [user, router]);
+  const userName = user?.fullName || user?.email || "";
   const [sidebarOpen, setSidebarOpen] = useState(false);
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -64,83 +71,116 @@ function SidebarLayout({ children }: { children: React.ReactNode }) {
 }
 
 export default function OwnerDashboard() {
-  // Mock data for demonstration
-  const apartments = [
-    {
-      id: "1",
-      title: "Modern 2BR Apartment",
-      location: "Ikeja, Lagos",
-      price: "₦1,200,000/year",
-      status: "Active",
-      image: "/apartment1.jpg",
-    },
-    {
-      id: "2",
-      title: "Cozy Studio Flat",
-      location: "Lekki, Lagos",
-      price: "₦800,000/year",
-      status: "Inactive",
-      image: "/apartment2.jpg",
-    },
-  ];
+  const { user } = useAppSelector((state) => state.auth);
+  const [apartments, setApartments] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [messagesByApartment, setMessagesByApartment] = React.useState<Record<string, any[]>>({});
+  const [senderNames, setSenderNames] = React.useState<Record<string, string>>({});
 
-  const messages = [
-    {
-      apartmentId: "1",
-      from: "Jane Doe",
-      text: "Hi, is this apartment still available?",
-      time: "Today, 10:15 AM",
-    },
-    {
-      apartmentId: "2",
-      from: "John Smith",
-      text: "Can I schedule a viewing?",
-      time: "Yesterday, 4:30 PM",
-    },
-  ];
+  React.useEffect(() => {
+    async function fetchApartmentsAndMessages() {
+      if (!user?.uuid) return;
+      setLoading(true);
+      try {
+        const res = await fetch(process.env.NEXT_PUBLIC_API_BASE_URL + "apartments");
+        const data = await res.json();
+        // Filter apartments by owner uuid (populated)
+        const myApts = Array.isArray(data)
+          ? data.filter((apt) => apt.owner?.uuid === user.uuid)
+          : [];
+        setApartments(myApts);
+
+        // Fetch recent messages for each apartment
+        const messagesObj: Record<string, any[]> = {};
+        const senderIdSet = new Set<string>();
+        await Promise.all(
+          myApts.map(async (apt) => {
+            try {
+              const resMsg = await fetch(process.env.NEXT_PUBLIC_API_BASE_URL + `messages/${apt._id || apt.id}`);
+              const msgs = await resMsg.json();
+              console.log("Fetched messages for apartment", apt._id || apt.id, msgs);
+              const recentMsgs = Array.isArray(msgs) ? msgs.slice(-3).reverse() : [];
+              messagesObj[apt._id || apt.id] = recentMsgs;
+              recentMsgs.forEach((msg: any) => {
+                if (msg.sender) senderIdSet.add(msg.sender);
+              });
+            } catch {
+              messagesObj[apt._id || apt.id] = [];
+            }
+          })
+        );
+        setMessagesByApartment(messagesObj);
+
+        // Fetch sender names for all unique sender ids
+        const senderNamesObj: Record<string, string> = {};
+        await Promise.all(
+          Array.from(senderIdSet).map(async (senderId) => {
+            try {
+              const resUser = await fetch(process.env.NEXT_PUBLIC_API_BASE_URL + `users/${senderId}`);
+              const userData = await resUser.json();
+              senderNamesObj[senderId] = userData.fullName || userData.email || senderId;
+            } catch {
+              senderNamesObj[senderId] = senderId;
+            }
+          })
+        );
+        setSenderNames(senderNamesObj);
+      } catch (err) {
+        setApartments([]);
+        setMessagesByApartment({});
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchApartmentsAndMessages();
+  }, [user?.uuid]);
 
   return (
-    <SidebarLayout>
+    <SidebarLayout user={user}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Apartments Section */}
         <div>
           <h2 className="text-lg font-semibold mb-4">Your Apartments</h2>
-          <div className="space-y-4">
-            {apartments.map((apt) => (
-              <div key={apt.id} className="flex items-center bg-white rounded-lg shadow p-4 gap-4">
-                <img src={apt.image} alt={apt.title} className="w-20 h-20 object-cover rounded-md border" />
-                <div className="flex-1">
-                  <div className="font-semibold text-indigo-700">{apt.title}</div>
-                  <div className="text-sm text-gray-500">{apt.location}</div>
-                  <div className="text-sm text-gray-700">{apt.price}</div>
-                  <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs ${apt.status === "Active" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-500"}`}>{apt.status}</span>
+          {loading ? (
+            <div className="text-center text-gray-500">Loading...</div>
+          ) : apartments.length === 0 ? (
+            <div className="text-center text-gray-500">No apartments found.</div>
+          ) : (
+            <div className="space-y-4">
+              {apartments.map((apt) => (
+                <div key={apt._id || apt.id} className="flex flex-col bg-white rounded-lg shadow p-4 gap-2">
+                  <div className="flex items-center gap-4">
+                    <img src={apt.images?.[0] || "/apartment1.jpg"} alt={apt.title} className="w-20 h-20 object-cover rounded-md border" />
+                    <div className="flex-1">
+                      <div className="font-semibold text-indigo-700">{apt.title}</div>
+                      <div className="text-sm text-gray-500">{apt.location}</div>
+                      <div className="text-sm text-gray-700">{apt.price}</div>
+                      <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs bg-green-100 text-green-700`}>Active</span>
+                    </div>
+                  </div>
+                  {/* Recent messages for this apartment */}
+                  <div className="mt-2">
+                    <h3 className="text-sm font-semibold text-indigo-600 mb-1">Recent Messages</h3>
+                    {messagesByApartment[apt._id || apt.id]?.length ? (
+                      <div className="space-y-2">
+                        {messagesByApartment[apt._id || apt.id].map((msg, i) => (
+                          <div key={msg._id || i} className="bg-indigo-50 rounded p-2">
+                            <div className="text-xs text-gray-700 font-semibold">From: {senderNames[msg.sender] || msg.sender}</div>
+                            <div className="text-sm text-gray-800">{msg.content}</div>
+                            <div className="text-xs text-gray-400">{msg.timestamp ? new Date(msg.timestamp).toLocaleString() : ""}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-400">No messages yet.</div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        {/* Messages Section */}
-        <div>
-          <h2 className="text-lg font-semibold mb-4">Recent Messages</h2>
-          <div className="space-y-4">
-            {messages.map((msg, i) => {
-              const apt = apartments.find(a => a.id === msg.apartmentId);
-              return (
-                <div key={i} className="bg-white rounded-lg shadow p-4">
-                  <div className="font-semibold text-indigo-700">{msg.from}</div>
-                  <div className="text-sm text-gray-600 mb-1">{msg.text}</div>
-                  <div className="text-xs text-gray-400">{msg.time}</div>
-                  {apt && (
-                    <div className="text-xs text-gray-500 mt-1">For: <span className="font-semibold">{apt.title}</span></div>
-                  )}
-                  <a href={`/apartments/${msg.apartmentId}/message`} className="text-indigo-600 hover:underline text-xs mt-2 inline-block">View Conversation</a>
-                </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
-   
     </SidebarLayout>
   );
 }

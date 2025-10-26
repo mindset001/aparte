@@ -1,55 +1,108 @@
-'use client'
+"use client";
 
-import { useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useAppSelector } from "@/store";
 import { Smile, Paperclip, Mic, Send, Phone } from "lucide-react";
 
-const mockMessages = [
-  { from: "me", text: "Hi, I'm interested in your apartment! 😊", time: "09:00" },
-  { from: "owner", text: "Hello! Thanks for reaching out. How can I help you?", time: "09:01" },
-];
+type Props = {
+  apartmentId: string;
+};
 
-export default function ChatBox({ apartmentId }: { apartmentId: string }) {
-  const [messages, setMessages] = useState<any[]>(mockMessages);
+export default function ChatBox({ apartmentId }: Props) {
+  const { user } = useAppSelector((s) => s.auth);
+  const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [audioURL, setAudioURL] = useState<string | null>(null);
   const [showEmojis, setShowEmojis] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [audioChunks, setAudioChunks] = useState<any[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const emojiList = ["😀","😁","😂","🤣","😃","😄","😅","😆","😉","😊","😋","😎","😍","😘","🥰","😗","😙","😚","🙂","🤗","🤩","🤔","🤨","😐","😑","😶","🙄","😏","😣","😥","😮","🤐","😯","😪","😫","🥱","😴","😌","😛","😜","😝","🤤","😒","😓","😔","😕","🙃","🤑","😲","☹️","🙁","😖","😞","😟","😤","😢","😭","😦","😧","😨","😩","🤯","😬","😰","😱","🥵","🥶","😳","🤪","😵","😡","😠","🤬","😷","🤒","🤕","🤢","🤮","🥴","😇","🥳"];
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  function sendMessage() {
-    if (!input.trim()) return;
-    setMessages([...messages, { from: "me", text: input, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
-    setInput("");
+  const emojiList = ["😀", "😁", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊", "😋", "😎", "😍", "😘", "🥰", "😗", "😙", "😚", "🙂", "🤗", "🤩", "🤔", "🤨", "😐", "😑", "😶", "🙄", "😏", "😣", "😥", "😮", "🤐", "😯", "😪", "😫", "🥱", "😴", "😌", "😛", "😜", "😝", "🤤", "😒", "😓", "😔", "😕", "🙃", "🤑", "😲", "☹️", "🙁", "😖", "😞", "😟", "😤", "😢", "😭", "😦", "😧", "😨", "😩", "🤯", "😬", "😰", "😱", "🥵", "🥶", "😳", "🤪", "😵", "😡", "😠", "🤬", "😷", "🤒", "🤕", "🤢", "🤮", "🥴", "😇", "🥳"];
+
+  useEffect(() => {
+    if (!apartmentId) return;
+
+    let mounted = true;
+    let intervalId: NodeJS.Timeout | null = null;
+
+    async function fetchMessages() {
+      try {
+        const base = process.env.NEXT_PUBLIC_API_BASE_URL || "/";
+        const url = `${base.replace(/\/$/, "")}/messages/${apartmentId}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.message || "Failed to fetch messages");
+        if (mounted) setMessages(Array.isArray(data) ? data : []);
+      } catch (err: any) {
+        if (mounted) setError(err?.message ?? String(err));
+      }
+    }
+
+    // Initial load
+    setLoading(true);
+    fetchMessages().finally(() => setLoading(false));
+
+    // Poll every 500ms
+    intervalId = setInterval(fetchMessages, 500);
+
+    return () => {
+      mounted = false;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [apartmentId]);
+
+  async function sendMessage() {
+    if (!input.trim() || !user?.uuid) return;
+    const newMsg = {
+      apartmentId,
+      sender: user.uuid,
+      receiver: "owner",
+      content: input,
+    };
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || "/";
+      const url = `${base.replace(/\/$/, "")}/messages`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newMsg),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result?.message || "Failed to send message");
+      setMessages((prev) => [...prev, result]);
+      setInput("");
+    } catch (err: any) {
+      setError(err?.message ?? String(err));
+    }
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
       const url = URL.createObjectURL(file);
-      setMessages([
-        ...messages,
+      setMessages((prev) => [
+        ...prev,
         {
-          from: "me",
+          sender: user?.uuid,
           file: { name: file.name, url },
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
+          timestamp: new Date().toISOString(),
+        },
       ]);
     }
   }
 
   function handleEmoji(emoji: string) {
-    setInput(input + emoji);
+    setInput((v) => v + emoji);
     setShowEmojis(false);
   }
 
   async function handleVoiceNote() {
     if (recording) {
-      if (mediaRecorder) {
-        mediaRecorder.stop();
-      }
+      mediaRecorder?.stop();
       setRecording(false);
       return;
     }
@@ -59,17 +112,20 @@ export default function ChatBox({ apartmentId }: { apartmentId: string }) {
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new window.MediaRecorder(stream);
+      const recorder = new (window as any).MediaRecorder(stream);
       setMediaRecorder(recorder);
       setAudioChunks([]);
       recorder.ondataavailable = (e: any) => {
         setAudioChunks((prev) => [...prev, e.data]);
       };
       recorder.onstop = () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
         const url = URL.createObjectURL(audioBlob);
         setAudioURL(url);
-        setMessages((prev) => [...prev, { from: "me", audio: url, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
+        setMessages((prev) => [
+          ...prev,
+          { sender: user?.uuid, audio: url, timestamp: new Date().toISOString() },
+        ]);
       };
       recorder.start();
       setRecording(true);
@@ -91,23 +147,35 @@ export default function ChatBox({ apartmentId }: { apartmentId: string }) {
         </button>
       </div>
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3 bg-indigo-50">
-        {messages.map((msg, idx) => (
-          <div key={idx} className={`flex ${msg.from === "me" ? "justify-end" : "justify-start"}`}>
-            <div className={`rounded-2xl px-4 py-2 max-w-xs ${msg.from === "me" ? "bg-indigo-600 text-white" : "bg-white text-gray-800 border"}`}>
-              {msg.audio ? (
-                <audio controls src={msg.audio} className="w-full mt-1" />
-              ) : msg.file ? (
-                <div>
-                  <span className="block text-sm mb-1">📎 Uploaded file:</span>
-                  <a href={msg.file.url} download={msg.file.name} className="underline text-indigo-200 hover:text-indigo-100 break-all" target="_blank" rel="noopener noreferrer">{msg.file.name}</a>
+        {loading ? (
+          <div className="text-center text-gray-500">Loading messages...</div>
+        ) : error ? (
+          <div className="text-center text-red-600">{error}</div>
+        ) : messages.length === 0 ? (
+          <div className="text-center text-gray-500">No messages yet.</div>
+        ) : (
+          messages.map((msg, idx) => (
+            <div key={idx} className={`flex ${msg.sender === user?.uuid ? "justify-end" : "justify-start"}`}>
+              <div className={`rounded-2xl px-4 py-2 max-w-xs relative ${msg.sender === user?.uuid ? "bg-indigo-600 text-white" : "bg-white text-gray-800 border"}`}>
+                <div className="absolute -top-6 left-0 text-xs text-gray-400 font-semibold">
+                  {msg.sender === user?.uuid ? "You" : "Owner"}
                 </div>
-              ) : (
-                msg.text
-              )}
-              <span className="block text-xs text-right mt-1 opacity-60">{msg.time}</span>
+                {msg.content}
+                {msg.file && (
+                  <div className="mt-2">
+                    <a href={msg.file.url} target="_blank" rel="noreferrer" className="underline">
+                      {msg.file.name}
+                    </a>
+                  </div>
+                )}
+                {msg.audio && (
+                  <audio src={msg.audio} controls className="mt-2 w-full" />
+                )}
+                <span className="block text-xs text-right mt-1 opacity-60">{msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""}</span>
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
       <div className="border-t px-4 py-3 flex items-center gap-2 bg-white">
         <div className="relative">
@@ -140,3 +208,4 @@ export default function ChatBox({ apartmentId }: { apartmentId: string }) {
     </div>
   );
 }
+

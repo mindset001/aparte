@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useAppDispatch } from "../../store";
+import { authStart, authSuccess, authFailure } from "../../store/slices/authSlice";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -8,28 +10,63 @@ import { Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 
 export default function RegisterForm() {
+  const dispatch = useAppDispatch();
 
   const [form, setForm] = useState({
-    name: "",
+    fullName: "",
     email: "",
     password: "",
-    confirmPassword: "",
+    confirmPassword: ""
   });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     setForm({ ...form, [e.target.name]: e.target.value });
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
+    dispatch(authStart());
+    if (!form.fullName.trim()) {
+      setError("Full name is required");
+      dispatch(authFailure("Full name is required"));
+      return;
+    }
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords do not match");
+      dispatch(authFailure("Passwords do not match"));
+      return;
+    }
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const payload = {
+        fullName: form.fullName,
+        email: form.email,
+        password: form.password
+      };
+      const res = await fetch(process.env.NEXT_PUBLIC_API_BASE_URL + "auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const result = await res.json();
+      if (!res.ok || !result.uuid) throw new Error(result.message || "Signup failed");
       setSuccess(true);
-    }, 1200);
+      dispatch(authSuccess({ user: { uuid: result.uuid, fullName: form.fullName, email: form.email } }));
+      setTimeout(() => {
+        window.location.href = "/auth/login";
+      }, 1500);
+    } catch (err: any) {
+      setError(err.message);
+      setSuccess(false);
+      dispatch(authFailure(err.message));
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -40,15 +77,16 @@ export default function RegisterForm() {
           <p className="text-gray-500 text-base">Sign up to list or find your next apartment</p>
         </div>
         {success ? (
-          <div className="text-green-600 text-center font-medium">Account created! (UI only)</div>
+          <div className="text-green-600 text-center font-medium">Account created! Redirecting to login...</div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
               <Input
-                name="name"
-                placeholder="Your name"
-                value={form.name}
+                name="fullName"
+                type="text"
+                placeholder="Your full name"
+                value={form.fullName}
                 onChange={handleChange}
                 required
                 className="bg-gray-50"
@@ -68,41 +106,32 @@ export default function RegisterForm() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <div className="relative">
-                <Input
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Password"
-                  value={form.password}
-                  onChange={handleChange}
-                  required
-                  className="bg-gray-50 pr-10"
-                />
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-700 cursor-pointer"
-                  tabIndex={-1}
-                  onClick={() => setShowPassword((v) => !v)}
-                >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
-              </div>
+              <Input
+                name="password"
+                type="password"
+                placeholder="Password"
+                value={form.password}
+                onChange={handleChange}
+                required
+                className="bg-gray-50"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
               <Input
                 name="confirmPassword"
-                type={showPassword ? "text" : "password"}
-                placeholder="Confirm Password"
+                type="password"
+                placeholder="Confirm password"
                 value={form.confirmPassword}
                 onChange={handleChange}
                 required
-                className="bg-gray-50 pr-10"
+                className="bg-gray-50"
               />
             </div>
             <Button type="submit" className="w-full mt-2 cursor-pointer" disabled={loading}>
-              {loading ? "Creating..." : "Register"}
+              {loading ? "Submitting..." : "Register"}
             </Button>
+            {error && <div className="text-red-600 mt-2">{error}</div>}
             <div className="text-center mt-4 text-sm text-gray-600">
               Already a member?{' '}
               <Link href="/auth/login" className="text-indigo-700 font-medium hover:underline cursor-pointer">Login</Link>
